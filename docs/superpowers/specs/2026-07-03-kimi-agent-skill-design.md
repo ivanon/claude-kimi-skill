@@ -1,7 +1,7 @@
 # kimi-agent Skill 设计文档
 
 日期：2026-07-03
-状态：已批准（待用户审阅书面 spec）
+状态：Pending review（设计对话中已批准，书面 spec 待用户审阅；已吸收 cursor 评审的 P0/P1 意见）
 
 ## 1. 目标
 
@@ -56,36 +56,70 @@ claude-kimi-skill/
 
 ```bash
 kimi-agent review <file> [--focus "关注点"] [--output <file>]
-kimi-agent review-plan <plan文件> [--scope <目录/文件...>] [--output <file>]
+kimi-agent review-plan <plan文件> [--scope <路径>]... [--output <file>]
 kimi-agent review-diff [<git range>] [--output <file>]    # 不带 range 默认 review 未提交变更
-kimi-agent implement "<需求描述>" [--scope <目录>] [--plan <设计文档>]
+kimi-agent implement "<需求描述>" [--scope <路径>]... [--plan <设计文档>]
 kimi-agent run "<自由prompt>"
 
 # 通用选项
 --model <m>      # 透传 kimi -m
 --timeout <sec>  # 默认 600，超时 kill
 --cwd <dir>      # 默认当前目录
+--dry-run        # 只打印最终 prompt 与将执行的 kimi 命令行，不实际调用（调试用）
 ```
 
 五类任务：文件/文档 review、plan-based review、diff review、TDD 实现、自由任务透传（`run` 不套模板，直接把 prompt 交给 kimi）。
 
-权限模式：所有子命令统一 `kimi -y` 全自动执行；review 类靠模板中写死的"只读"约束保证不改文件。
+**参数语义细则**：
+
+- `--scope` 可重复出现，多个值在模板中拼接为换行的 `- <路径>` 列表。
+- `review-diff` 的 `<git range>` 接受任何 `git diff` 兼容的参数形式（如 `main..HEAD`、`main...HEAD`、单个 commit、`--cached`），原样嵌入模板文案；不传时默认为 `HEAD`（即 `git diff HEAD`，含工作区+暂存区全部未提交变更）。
+- diff 内容**不嵌入 prompt**：模板只告诉 kimi 应执行的 diff 命令（如 `git diff HEAD`），由 kimi 自己在项目内执行查看。这同时规避了大 diff 撑爆 prompt/argv 长度的问题。
+- `<file>`、`<plan文件>`、`--scope`、`--plan` 的路径在预检查时规范化为绝对路径，且必须位于 `--cwd` 目录子树内，越界即报错（exit 2）。
+
+**权限模式**：所有子命令统一 `kimi -y` 全自动执行。review 类的"只读"是 **prompt 级软约束**（模板写死"不要修改/创建/删除任何文件"），没有技术层面的强制——`-y` 模式下 kimi 理论上仍可能误写文件，风险由 git 工作区兜底（可 diff 可回滚）。SKILL.md 与 README 中须明确披露这一点，并强调 `implement` 会修改仓库。kimi 只读/沙箱模式若后续版本提供，review 类应优先改用（记入 P2 迭代方向，v1 不做 review 前后 `git status` 快照对比）。
 
 ## 7. Prompt 模板设计
 
-模板是普通 markdown 文件，占位符 `{{VAR}}`。脚本处理规则：
+模板是普通 markdown 文件，占位符 `{{VAR}}`。模板文件路径解析：相对脚本自身位置，即 `dirname(fileURLToPath(import.meta.url))/../prompts/<名称>.md`，与调用时的 cwd 无关。
 
-- **必填变量**缺失：报错退出（exit 2）。
-- **可选变量**未提供：占位符所在的独立段落整体删除（占位段落约定独占一段）。
+脚本处理规则：
+
+- **必填变量**缺失：stderr 输出含变量名的错误信息，exit 2。
+- **可选变量**未提供：删除对应的**可选块**。可选块的 markdown 约定：以 `{{#VAR}}` 独占一行开始、`{{/VAR}}` 独占一行结束；变量有值时去掉首尾标记行并替换块内 `{{VAR}}`，无值时整块（含标记行）删除。
+
+before/after 示例（`--focus` 未提供时）：
+
+```markdown
+## Review 要求                      ## Review 要求
+- 只读分析                          - 只读分析
+{{#FOCUS}}                    →
+## 重点关注                         ## 输出格式
+{{FOCUS}}
+{{/FOCUS}}
+
+## 输出格式
+```
+
+`--focus "并发安全"` 提供时：
+
+```markdown
+## 重点关注
+并发安全
+```
+
+`review-plan` 的 `SCOPE` 未提供时同样走可选块删除，模板中该块之外的正文已写死"评审范围为整个仓库，以下如列出具体范围则以其为准"，因此删除后语义自然回落到全仓库。
 
 | 模板 | 必填变量 | 可选变量 | 核心约束 |
 |------|---------|---------|---------|
 | review-file | `TARGET_FILE` | `FOCUS` | 只读；Critical/Warning/Suggestion 分级；每条问题带 位置+描述+建议 |
 | review-plan | `PLAN_FILE` | `SCOPE`（默认全仓库） | 只读；逐条对照设计文档检查实现完整性/一致性 |
-| review-diff | `DIFF_RANGE`（脚本始终填入：用户给的 range，或默认值"未提交变更"） | `FOCUS` | 只读；聚焦变更本身及其影响面 |
+| review-diff | `DIFF_RANGE`（由脚本生成：用户传的 range 或默认 `HEAD`；用户视角可选，模板视角始终有值） | `FOCUS` | 只读；聚焦变更本身及其影响面 |
 | implement | `TASK` | `SCOPE`、`PLAN_FILE` | 强制 TDD：先写失败测试→实现→跑通；遵循项目现有风格 |
 
-所有模板共同要求：先阅读项目 README/CLAUDE.md（如存在）了解项目约定；以 markdown 输出最终报告；review 类模板明确"不要修改、创建或删除任何文件"。
+所有模板共同要求：先阅读项目 README/CLAUDE.md（如存在）了解项目约定；**报告使用中文撰写**、以 markdown 输出；review 类模板明确"不要修改、创建或删除任何文件"。
+
+`implement` 模板额外要求 kimi 在报告末尾输出「验证摘要」：实际执行的测试命令及通过/失败计数。成功判定 = kimi 退出码为 0 **且**报告含验证摘要；缺少摘要时 Claude 应视为"实现未经验证"并向用户如实汇报。
 
 ## 8. 错误处理
 
@@ -97,7 +131,10 @@ kimi-agent run "<自由prompt>"
 | review-diff 不在 git 仓库或 range 无效 | 预检查 `git rev-parse`，清晰报错 |
 | 超时（默认 600s） | kill kimi 进程，报超时，exit 1 |
 | kimi 非零退出 | 透传 stderr 与退出码 |
-| `--output` 落盘 | 实时转发 stdout 的同时捕获；写文件时过滤思考行（`• ` 前缀）和 "To resume this session" 尾行，只保留报告正文 |
+| 路径越界（目标不在 `--cwd` 子树内） | 预检查报错，exit 2 |
+| `--output` 落盘 | tee 式双写：stdout **原样**实时转发（不过滤），同时缓冲一份，进程结束后过滤再写文件 |
+
+**落盘过滤规则**（仅作用于 `--output` 文件，绝不影响 stdout）：删除以 `• ` 开头的思考行、删除 "To resume this session" 尾行。正文中的 markdown 列表通常用 `-`/`*`，不受影响；但规则须以 kimi 实测输出样本为准细化，测试 fixture 中覆盖「思考行 + 正文含 `• ` 字符 + resume 尾行」的混合样例，防止误删正文。
 
 不做自动重试：kimi 是本地 CLI，失败通常源于配置/登录问题，重试无意义（与 cursor 项目针对网络 API 的重试策略不同）。
 
@@ -108,7 +145,24 @@ kimi 可执行文件解析顺序：`KIMI_BIN` 环境变量 → PATH 中的 `kimi
 - **触发**：仅当用户明确提到 "kimi" 且意图为 review/实现/编码任务，如"用kimi review这个文件"、"让kimi实现登录功能"、"用kimi检查一下这个PR"。
 - **不触发**：未提 kimi 的 review/开发请求（Claude 自行处理）；浏览器/网页类请求（归 `kimi-webbridge` skill）。
 - skill 命名 `kimi-agent`，与 `kimi-webbridge` 区分。
-- SKILL.md 含意图→子命令映射表（如"review这个PR/这次改动" → `review-diff`）与各子命令示例。
+
+**SKILL.md 最小规格**（必须包含的章节）：
+
+1. **触发条件**：正例 + 反例（同上）。
+2. **调用方式**：`node <skill基目录>/bin/kimi-agent.mjs <子命令> ...`。skill 加载时 Claude Code 会在 skill 内容前注入 "Base directory for this skill" 行，SKILL.md 指示 Claude 用该基目录拼出脚本绝对路径，不依赖 cwd。
+3. **意图→子命令映射表**：
+
+   | 用户说法 | 子命令 |
+   |---------|--------|
+   | review 某个文件/文档 | `review <file>` |
+   | 对照设计文档/plan 检查实现 | `review-plan <plan>` |
+   | review 这个 PR / 这次改动 / 提交前检查 | `review-diff` |
+   | 实现/开发/加功能/加测试 | `implement "<需求>"` |
+   | 其他明确指名 kimi 的编码相关任务（如"让 kimi 随便看看这个项目"） | `run "<prompt>"` |
+
+   模糊意图默认路由：能对上前四行的优先用模板化子命令，对不上的才落到 `run`。
+4. **各子命令示例命令行**。
+5. **风险提示**：`implement` 会修改仓库文件；review 只读为 prompt 级软约束；`run` 仅用于模板覆盖不了的场景。
 
 ## 10. 输出约定
 
@@ -120,9 +174,9 @@ kimi 可执行文件解析顺序：`KIMI_BIN` 环境变量 → PATH 中的 `kimi
 
 框架：`node:test`（零依赖）。
 
-- **单元测试**：参数解析；模板变量替换（必填缺失报错、可选段落删除）；kimi 命令行参数构造。
-- **集成测试**：通过 `KIMI_BIN` 指向 stub 脚本冒充 kimi，端到端验证 子命令 → 最终 prompt 内容 → 参数传递 → 输出过滤，不依赖真实 kimi。
-- **冒烟（手动）**：`kimi-agent run "回复ok"` 走一次真实 kimi。
+- **单元测试**：参数解析；模板变量替换（必填缺失时 exit 2 且 stderr 含变量名；可选块有值/无值的快照对比，覆盖 `FOCUS`/`SCOPE`/`PLAN_FILE`）；kimi 命令行参数构造；`--scope` 多值拼接。
+- **集成测试**（`KIMI_BIN` 指向 stub 脚本冒充 kimi）：子命令 → 最终 prompt 内容 → 参数传递；落盘过滤的混合边界样例（思考行 + 正文含 `• ` + resume 尾行）；`review-diff` 预检查三态（非 git 目录、非法 range、空 diff）；`--timeout` 触发后子进程确实被 kill（stub 内 sleep）；路径越界拒绝。
+- **冒烟（手动）**：`kimi-agent run "回复ok"` 走一次真实 kimi；用真实输出样本校准落盘过滤规则的 fixture。
 
 ## 12. 明确不做（YAGNI）
 
@@ -131,3 +185,11 @@ kimi 可执行文件解析顺序：`KIMI_BIN` 环境变量 → PATH 中的 `kimi
 - 不做 TypeScript / 构建链 / 运行时依赖。
 - 不做 review 结果自动归档目录。
 - v1 不做 npm 发布（package.json 仅为 npm link 与元数据服务）。
+- v1 不做多文件 review（`review` 仅接受单文件；多文件场景用 `review-plan --scope` 或 `review-diff` 覆盖）。
+- v1 不做大 diff 截断/分片（diff 由 kimi 自行执行查看，不进 prompt；超大仓库场景在 README troubleshooting 提示）。
+- v1 不做 review 前后 `git status` 快照对比、不做 kimi 只读沙箱（记为 P2 迭代方向）。
+- 环境变量仅支持 `KIMI_BIN`；超时等一律走 CLI 参数，不设 `KIMI_AGENT_TIMEOUT` 之类的环境变量。
+
+## 13. 评审记录
+
+- 2026-07-03：cursor（composer 模型）对本 spec 做设计评审，结论"推荐批准进入实现"；其 P0/P1 意见（review-diff 默认范围、可选块语法、只读软约束披露、SKILL.md 规格、--output 过滤语义、implement 成功判定等）已全部并入上述章节，P2 项记入第 12 节迭代方向。
