@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
+import { existsSync, statSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 export class UsageError extends Error {}
 
@@ -88,6 +91,54 @@ export function parseCliArgs(argv) {
     throw new UsageError(`${cmd} 需要一个非空的描述参数`);
   }
   return opts;
+}
+
+export function resolveInside(cwd, p, label) {
+  const root = resolve(cwd);
+  const abs = resolve(root, p);
+  if (abs !== root && !abs.startsWith(root + sep)) {
+    throw new UsageError(`${label} 超出工作目录范围: ${p}`);
+  }
+  return abs;
+}
+
+export function diffRangeOf(opts) {
+  return opts.positional.join(' ').trim() || 'HEAD';
+}
+
+export function precheck(opts) {
+  const cwd = resolve(opts.cwd);
+  if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
+    throw new UsageError(`--cwd 目录不存在: ${opts.cwd}`);
+  }
+  if (opts.cmd === 'review' || opts.cmd === 'review-plan') {
+    const abs = resolveInside(cwd, opts.positional[0], '目标文件');
+    if (!existsSync(abs) || !statSync(abs).isFile()) throw new UsageError(`文件不存在: ${opts.positional[0]}`);
+  }
+  if (opts.plan) {
+    const abs = resolveInside(cwd, opts.plan, '--plan 文件');
+    if (!existsSync(abs) || !statSync(abs).isFile()) throw new UsageError(`--plan 文件不存在: ${opts.plan}`);
+  }
+  // --scope 只做越界校验，不要求存在（允许指向将来才创建的路径）
+  for (const s of opts.scope) resolveInside(cwd, s, '--scope 路径');
+  if (opts.cmd === 'review-diff') {
+    const gitOut = (args) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+    let inside = '';
+    try { inside = gitOut(['rev-parse', '--is-inside-work-tree']).trim(); }
+    catch (e) {
+      if (e?.code === 'ENOENT') throw new UsageError('未找到 git 命令，请确认 git 已安装');
+      // 其他失败视为非 git 目录，走下方统一报错
+    }
+    if (inside !== 'true') throw new UsageError('当前目录不是 git 仓库，无法 review diff');
+    const range = diffRangeOf(opts);
+    let numstat;
+    try { numstat = gitOut(['diff', '--numstat', ...range.split(/\s+/)]); }
+    catch (e) {
+      const detail = e?.stderr?.toString().trim().split('\n')[0] ?? '';
+      throw new UsageError(`无效的 git range: ${range}${detail ? `（${detail}）` : ''}`);
+    }
+    if (!numstat.trim()) throw new UsageError(`范围 ${range} 内没有可 review 的变更（注意：未跟踪的新文件不在 git diff 范围内，请先 git add）`);
+  }
 }
 
 export function filterReport(text) {

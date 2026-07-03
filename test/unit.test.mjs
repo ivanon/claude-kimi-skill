@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runCli } from './helpers.mjs';
-import { renderTemplate, UsageError, parseCliArgs, filterReport } from '../bin/kimi-agent.mjs';
+import { writeFileSync as fsWrite } from 'node:fs';
+import { join } from 'node:path';
+import { runCli, makeTmpProject, makeGitProject } from './helpers.mjs';
+import { renderTemplate, UsageError, parseCliArgs, filterReport, precheck, resolveInside } from '../bin/kimi-agent.mjs';
 
 test('未知子命令：exit 2 且 stderr 含用法', async () => {
   const r = await runCli(['nonsense']);
@@ -142,4 +144,42 @@ test('filterReport: 连续思考行删除后不留三连空行', () => {
   const out = filterReport(raw);
   assert.doesNotMatch(out, /\n{3,}/);
   assert.match(out, /正文/);
+});
+
+test('resolveInside: cwd 内路径通过，越界抛 UsageError', () => {
+  const dir = makeTmpProject();
+  assert.equal(resolveInside(dir, 'a.ts', '目标文件'), join(dir, 'a.ts'));
+  assert.throws(() => resolveInside(dir, '../outside.ts', '目标文件'), UsageError);
+  assert.throws(() => resolveInside(dir, '/etc/passwd', '目标文件'), UsageError);
+});
+
+test('precheck: review 目标文件不存在时报错', () => {
+  const dir = makeTmpProject();
+  assert.throws(() => precheck({ cmd: 'review', positional: ['missing.ts'], scope: [], plan: null, cwd: dir }), /文件不存在/);
+  precheck({ cmd: 'review', positional: ['a.ts'], scope: [], plan: null, cwd: dir }); // 不抛
+});
+
+test('precheck: --plan 文件不存在时报错', () => {
+  const dir = makeTmpProject();
+  assert.throws(() => precheck({ cmd: 'implement', positional: ['x'], scope: [], plan: 'missing.md', cwd: dir }), /--plan/);
+});
+
+test('precheck: review-diff 非 git 目录报错', () => {
+  const dir = makeTmpProject();
+  assert.throws(() => precheck({ cmd: 'review-diff', positional: [], scope: [], plan: null, cwd: dir }), /git 仓库/);
+});
+
+test('precheck: review-diff 非法 range 报错，且错误信息附带 git stderr 细节', () => {
+  const dir = makeGitProject();
+  assert.throws(
+    () => precheck({ cmd: 'review-diff', positional: ['not-a-ref..HEAD'], scope: [], plan: null, cwd: dir }),
+    (e) => e instanceof UsageError && /无效的 git range/.test(e.message) && e.message.includes('（')
+  );
+});
+
+test('precheck: review-diff 空 diff 报错，有变更通过', () => {
+  const dir = makeGitProject();
+  assert.throws(() => precheck({ cmd: 'review-diff', positional: [], scope: [], plan: null, cwd: dir }), /没有可 review 的变更/);
+  fsWrite(join(dir, 'a.ts'), 'export const a = 2;\n');
+  precheck({ cmd: 'review-diff', positional: [], scope: [], plan: null, cwd: dir }); // 不抛
 });
