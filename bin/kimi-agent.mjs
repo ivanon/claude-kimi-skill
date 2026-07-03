@@ -2,7 +2,7 @@
 import { pathToFileURL } from 'node:url';
 import { existsSync, statSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 export class UsageError extends Error {}
 
@@ -152,17 +152,72 @@ export function filterReport(text) {
   return body === '' ? '' : `${body}\n`;
 }
 
+export function buildKimiArgs(prompt, opts) {
+  const args = ['-p', prompt, '-y'];
+  if (opts.model) args.push('-m', opts.model);
+  return args;
+}
+
+export function runKimi(prompt, opts) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const bin = process.env.KIMI_BIN || 'kimi';
+    const child = spawn(bin, buildKimiArgs(prompt, opts), {
+      cwd: opts.cwd,
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+    const chunks = [];
+    let timedOut = false;
+    // settled 防卫：error 事件后 close 仍会触发，确保 Promise 只 settle 一次
+    let settled = false;
+    const settle = (fn) => (value) => { if (!settled) { settled = true; fn(value); } };
+    const done = settle(resolvePromise);
+    const fail = settle(rejectPromise);
+    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, opts.timeout * 1000);
+    child.stdout.on('data', (chunk) => {
+      process.stdout.write(chunk);
+      chunks.push(chunk);
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      if (err.code === 'ENOENT') {
+        fail(new Error(`找不到 kimi 命令（${bin}）。请安装 kimi code CLI 并执行 kimi login，或设置 KIMI_BIN 指向可执行文件。`));
+      } else {
+        fail(err);
+      }
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        fail(new Error(`kimi 执行超时（${opts.timeout}s），进程已终止`));
+      } else {
+        done({ code: code ?? 1, stdout: Buffer.concat(chunks).toString('utf8') });
+      }
+    });
+  });
+}
+
 export async function main(argv) {
+  let opts;
   try {
-    const opts = parseCliArgs(argv);
-    void opts; // 后续任务接入 precheck / buildPrompt / runKimi
-    return 0;
+    opts = parseCliArgs(argv);
+    precheck(opts);
   } catch (e) {
     if (e instanceof UsageError) {
       process.stderr.write(`错误: ${e.message}\n\n${USAGE}`);
       return 2;
     }
     throw e;
+  }
+  if (opts.cmd !== 'run') { // Task 8 接入模板子命令后删除本分支
+    process.stderr.write(`错误: 子命令 ${opts.cmd} 尚未实现\n`);
+    return 2;
+  }
+  try {
+    const { code } = await runKimi(opts.positional[0], opts);
+    return code;
+  } catch (e) {
+    process.stderr.write(`错误: ${String(e?.message ?? e)}\n`);
+    return 1;
   }
 }
 
