@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **注：本计划为历史文档。** 实现后的冒烟修订（移除 `-y`、bullet 块落盘过滤、EPIPE 防护、选项按子命令白名单）以 spec 第 13 节及实际代码为准，本文中的 `-y` 等代码片段请勿照抄。
+
 **Goal:** 实现 kimi-agent skill——零依赖 Node 脚本 + 固定 prompt 模板，让 Claude 通过 CLI 调用 kimi code 完成 review 与 TDD 开发任务。
 
 **Architecture:** 单文件 ESM 脚本 `bin/kimi-agent.mjs` 导出纯函数（模板渲染、参数解析、预检查、输出过滤）并在直接执行时跑 `main()`；prompt 模板是 `prompts/` 下的 markdown 文件，变量替换完全由代码完成；通过 `spawn` 调用 `kimi -p <prompt> -y`（`KIMI_BIN` 可覆盖，测试用 stub 冒充）。

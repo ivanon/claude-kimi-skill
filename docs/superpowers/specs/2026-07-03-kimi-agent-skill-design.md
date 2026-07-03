@@ -49,7 +49,7 @@ claude-kimi-skill/
 1. Claude 识别到用户明确提到 kimi 且意图为 review/实现/编码任务。
 2. Claude 通过 Bash 调用 `node <skill目录>/bin/kimi-agent.mjs <子命令> <参数>`。
 3. 脚本读取对应模板，代码完成变量替换生成最终 prompt。
-4. `spawn(KIMI_BIN, ['-p', prompt, '-y', ...])` 在目标项目目录执行（参数数组、非 shell 调用，无转义问题；用 spawn 而非 execFile 是为了 tee 流式转发 stdout）。
+4. `spawn(KIMI_BIN, ['-p', prompt, ...])` 在目标项目目录执行（参数数组、非 shell 调用，无转义问题；用 spawn 而非 execFile 是为了 tee 流式转发 stdout）。**冒烟修订**：不传 `-y`——kimi 的 `-p` 模式不能与 `-y`/`--auto` 组合（CLI 直接报错），且 `-p` 模式本身默认自动批准所有操作，权限语义与原设计等同。
 5. kimi 输出实时流回 stdout，Claude 读取结果向用户汇报；`--output` 时同时落盘。
 
 ## 6. CLI 接口
@@ -57,7 +57,7 @@ claude-kimi-skill/
 ```bash
 kimi-agent review <file> [--focus "关注点"] [--output <file>]
 kimi-agent review-plan <plan文件> [--scope <路径>]... [--output <file>]
-kimi-agent review-diff [<git range>] [--output <file>]    # 不带 range 默认 review 未提交变更
+kimi-agent review-diff [<git range>] [--focus "关注点"] [--output <file>]    # 不带 range 默认 review 未提交变更
 kimi-agent implement "<需求描述>" [--scope <路径>]... [--plan <设计文档>]
 kimi-agent run "<自由prompt>"
 
@@ -76,8 +76,9 @@ kimi-agent run "<自由prompt>"
 - `review-diff` 的 `<git range>` 接受任何 `git diff` 兼容的参数形式（如 `main..HEAD`、`main...HEAD`、单个 commit、`--cached`），原样嵌入模板文案；不传时默认为 `HEAD`（即 `git diff HEAD`，含工作区+暂存区全部未提交变更）。
 - diff 内容**不嵌入 prompt**：模板只告诉 kimi 应执行的 diff 命令（如 `git diff HEAD`），由 kimi 自己在项目内执行查看。这同时规避了大 diff 撑爆 prompt/argv 长度的问题。
 - `<file>`、`<plan文件>`、`--scope`、`--plan` 的路径在预检查时规范化为绝对路径，且必须位于 `--cwd` 目录子树内，越界即报错（exit 2）。
+- **冒烟后修订**：`--output` 为通用选项（所有子命令可用，含 implement/run）；`--focus`/`--scope`/`--plan` 按子命令白名单校验（`--focus` 仅 review/review-diff，`--scope` 仅 review-plan/implement，`--plan` 仅 implement），不适用即 exit 2，防止静默无效。
 
-**权限模式**：所有子命令统一 `kimi -y` 全自动执行。review 类的"只读"是 **prompt 级软约束**（模板写死"不要修改/创建/删除任何文件"），没有技术层面的强制——`-y` 模式下 kimi 理论上仍可能误写文件，风险由 git 工作区兜底（可 diff 可回滚）。SKILL.md 与 README 中须明确披露这一点，并强调 `implement` 会修改仓库。kimi 只读/沙箱模式若后续版本提供，review 类应优先改用（记入 P2 迭代方向，v1 不做 review 前后 `git status` 快照对比）。
+**权限模式**：所有子命令统一走 kimi `-p` 非交互模式，该模式默认自动批准所有操作（冒烟修订：不传 `-y`，`-p` 与 `-y` 组合会被 kimi 拒绝，见第 5 节）。review 类的"只读"是 **prompt 级软约束**（模板写死"不要修改/创建/删除任何文件"），没有技术层面的强制——kimi 理论上仍可能误写文件，风险由 git 工作区兜底（可 diff 可回滚）。SKILL.md 与 README 中须明确披露这一点，并强调 `implement` 会修改仓库。kimi 只读/沙箱模式若后续版本提供，review 类应优先改用（记入 P2 迭代方向，v1 不做 review 前后 `git status` 快照对比）。
 
 ## 7. Prompt 模板设计
 
@@ -132,9 +133,9 @@ before/after 示例（`--focus` 未提供时）：
 | 超时（默认 600s） | kill kimi 进程，报超时，exit 1 |
 | kimi 非零退出 | 透传 stderr 与退出码 |
 | 路径越界（目标不在 `--cwd` 子树内） | 预检查报错，exit 2 |
-| `--output` 落盘 | tee 式双写：stdout **原样**实时转发（不过滤），同时缓冲一份，进程结束后过滤再写文件 |
+| `--output` 落盘 | tee 式双写：stdout **原样**实时转发（不过滤），同时缓冲一份，进程结束后过滤再写文件；kimi 非零退出时**仍落盘**已捕获的输出（部分报告也有排查价值），退出码照常透传 |
 
-**落盘过滤规则**（仅作用于 `--output` 文件，绝不影响 stdout）：删除以 `• ` 开头的思考行、删除 "To resume this session" 尾行。正文中的 markdown 列表通常用 `-`/`*`，不受影响；但规则须以 kimi 实测输出样本为准细化，测试 fixture 中覆盖「思考行 + 正文含 `• ` 字符 + resume 尾行」的混合样例，防止误删正文。
+**落盘过滤规则**（仅作用于 `--output` 文件，绝不影响 stdout；已按 2026-07-03 真实冒烟样本校准）：kimi `-p` 的真实输出把**每条消息**（思考与最终回复）都渲染为 `• ` 开头的块，续行缩进 2 空格，"To resume this session: kimi -r <id>" 可能直接粘在正文最后一个字符后。过滤算法：先正则删除 resume 提示（任意位置），然后取**最后一个 bullet 块**为最终报告（去掉首行 `• ` 前缀与续行的 2 空格缩进），无 bullet 块时保留全文兜底；最后压缩 3+ 连续空行并规范末尾换行。tee 转发遇下游管道关闭（EPIPE）时停止转发但继续缓冲，`--output` 仍正常落盘。
 
 不做自动重试：kimi 是本地 CLI，失败通常源于配置/登录问题，重试无意义（与 cursor 项目针对网络 API 的重试策略不同）。
 
@@ -193,3 +194,4 @@ kimi 可执行文件解析顺序：`KIMI_BIN` 环境变量 → PATH 中的 `kimi
 ## 13. 评审记录
 
 - 2026-07-03：cursor（composer 模型）对本 spec 做设计评审，结论"推荐批准进入实现"；其 P0/P1 意见（review-diff 默认范围、可选块语法、只读软约束披露、SKILL.md 规格、--output 过滤语义、implement 成功判定等）已全部并入上述章节，P2 项记入第 12 节迭代方向。
+- 2026-07-03（实现后冒烟修订）：真实 kimi 冒烟发现三处与原设计不符，已修正并回写第 5、8 节——① `-p` 不能与 `-y` 组合且 `-p` 默认自动批准（移除 `-y`）；② 真实输出为 bullet 块格式（思考与回复同前缀），落盘过滤改为"取最后一个 bullet 块"；③ tee 遇 EPIPE 需防护。
