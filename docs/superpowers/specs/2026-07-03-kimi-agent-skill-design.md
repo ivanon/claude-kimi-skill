@@ -49,7 +49,7 @@ claude-kimi-skill/
 1. Claude 识别到用户明确提到 kimi 且意图为 review/实现/编码任务。
 2. Claude 通过 Bash 调用 `node <skill目录>/bin/kimi-agent.mjs <子命令> <参数>`。
 3. 脚本读取对应模板，代码完成变量替换生成最终 prompt。
-4. `spawn(KIMI_BIN, ['-p', prompt, '-y', ...])` 在目标项目目录执行（参数数组、非 shell 调用，无转义问题；用 spawn 而非 execFile 是为了 tee 流式转发 stdout）。
+4. `spawn(KIMI_BIN, ['-p', prompt, ...])` 在目标项目目录执行（参数数组、非 shell 调用，无转义问题；用 spawn 而非 execFile 是为了 tee 流式转发 stdout）。**冒烟修订**：不传 `-y`——kimi 的 `-p` 模式不能与 `-y`/`--auto` 组合（CLI 直接报错），且 `-p` 模式本身默认自动批准所有操作，权限语义与原设计等同。
 5. kimi 输出实时流回 stdout，Claude 读取结果向用户汇报；`--output` 时同时落盘。
 
 ## 6. CLI 接口
@@ -134,7 +134,7 @@ before/after 示例（`--focus` 未提供时）：
 | 路径越界（目标不在 `--cwd` 子树内） | 预检查报错，exit 2 |
 | `--output` 落盘 | tee 式双写：stdout **原样**实时转发（不过滤），同时缓冲一份，进程结束后过滤再写文件 |
 
-**落盘过滤规则**（仅作用于 `--output` 文件，绝不影响 stdout）：删除以 `• ` 开头的思考行、删除 "To resume this session" 尾行。正文中的 markdown 列表通常用 `-`/`*`，不受影响；但规则须以 kimi 实测输出样本为准细化，测试 fixture 中覆盖「思考行 + 正文含 `• ` 字符 + resume 尾行」的混合样例，防止误删正文。
+**落盘过滤规则**（仅作用于 `--output` 文件，绝不影响 stdout；已按 2026-07-03 真实冒烟样本校准）：kimi `-p` 的真实输出把**每条消息**（思考与最终回复）都渲染为 `• ` 开头的块，续行缩进 2 空格，"To resume this session: kimi -r <id>" 可能直接粘在正文最后一个字符后。过滤算法：先正则删除 resume 提示（任意位置），然后取**最后一个 bullet 块**为最终报告（去掉首行 `• ` 前缀与续行的 2 空格缩进），无 bullet 块时保留全文兜底；最后压缩 3+ 连续空行并规范末尾换行。tee 转发遇下游管道关闭（EPIPE）时停止转发但继续缓冲，`--output` 仍正常落盘。
 
 不做自动重试：kimi 是本地 CLI，失败通常源于配置/登录问题，重试无意义（与 cursor 项目针对网络 API 的重试策略不同）。
 
@@ -193,3 +193,4 @@ kimi 可执行文件解析顺序：`KIMI_BIN` 环境变量 → PATH 中的 `kimi
 ## 13. 评审记录
 
 - 2026-07-03：cursor（composer 模型）对本 spec 做设计评审，结论"推荐批准进入实现"；其 P0/P1 意见（review-diff 默认范围、可选块语法、只读软约束披露、SKILL.md 规格、--output 过滤语义、implement 成功判定等）已全部并入上述章节，P2 项记入第 12 节迭代方向。
+- 2026-07-03（实现后冒烟修订）：真实 kimi 冒烟发现三处与原设计不符，已修正并回写第 5、8 节——① `-p` 不能与 `-y` 组合且 `-p` 默认自动批准（移除 `-y`）；② 真实输出为 bullet 块格式（思考与回复同前缀），落盘过滤改为"取最后一个 bullet 块"；③ tee 遇 EPIPE 需防护。
