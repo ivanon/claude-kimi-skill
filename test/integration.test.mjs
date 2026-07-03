@@ -140,3 +140,25 @@ test('runKimi: 下游管道提前关闭（EPIPE）不崩溃，--output 仍落盘
   assert.match(saved, /stub 报告/);
   assert.doesNotMatch(saved, /思考/);
 });
+
+test('review: 目标路径越界时 exit 2（端到端）', async () => {
+  const dir = makeTmpProject();
+  const r = await runCli(['review', '../outside.md'], { cwd: dir, env: { KIMI_BIN: STUB } });
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /超出工作目录/);
+});
+
+test('--output: kimi 非零退出时仍落盘已捕获的输出，退出码透传', async () => {
+  const dir = makeTmpProject();
+  const r = await runCli(['review', 'a.ts', '--output', 'partial.md'], { cwd: dir, env: { KIMI_BIN: STUB, STUB_EXIT: '3' } });
+  assert.equal(r.code, 3);
+  const saved = readFileSync(join(dir, 'partial.md'), 'utf8');
+  assert.match(saved, /stub 报告/);
+});
+
+test('implement: --output 同样生效', async () => {
+  const dir = makeTmpProject();
+  const r = await runCli(['implement', '加功能', '--output', 'impl.md'], { cwd: dir, env: { KIMI_BIN: STUB } });
+  assert.equal(r.code, 0);
+  assert.match(readFileSync(join(dir, 'impl.md'), 'utf8'), /stub 报告/);
+});

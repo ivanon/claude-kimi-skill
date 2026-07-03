@@ -204,3 +204,11 @@ test('precheck: review-diff 空 diff 报错，有变更通过', () => {
   fsWrite(join(dir, 'a.ts'), 'export const a = 2;\n');
   precheck({ cmd: 'review-diff', positional: [], scope: [], plan: null, cwd: dir }); // 不抛
 });
+
+// 冒烟修订回归：kimi -p 不能与 -y/--auto 组合，参数里绝不能出现 -y
+test('buildKimiArgs: 不含 -y/--auto', async () => {
+  const { buildKimiArgs } = await import('../bin/kimi-agent.mjs');
+  assert.deepEqual(buildKimiArgs('p', { model: null }), ['-p', 'p']);
+  assert.deepEqual(buildKimiArgs('p', { model: 'k2' }), ['-p', 'p', '-m', 'k2']);
+  assert.ok(!buildKimiArgs('p', { model: 'k2' }).includes('-y'));
+});
