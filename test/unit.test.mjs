@@ -120,30 +120,41 @@ test('parseCliArgs: -- 终止选项解析，--cwd 空值报错', () => {
   assert.throws(() => parseCliArgs(['review', 'a.ts', '--cwd', '']), UsageError);
 });
 
-test('filterReport: 过滤思考行与 resume 尾行，保留正文', () => {
+// 依据 kimi -p 真实输出校准（2026-07-03 冒烟样本）：
+// 每条消息渲染为 "• " 开头的块，续行缩进 2 空格；最后一个块是最终回复；
+// resume 提示可能直接粘在正文最后一个字符后（无换行）。
+test('filterReport: 取最后一个 bullet 块为报告，去前缀与缩进，删 resume', () => {
   const raw = [
-    '• 思考：正在分析代码',
-    '# review 报告',
+    '• 思考：The user wants a review. I should analyze the file.',
     '',
-    '- 正常列表项',
-    '正文中包含 • 字符但不在行首',
+    '• # review 报告',
     '',
-    'To resume this session: kimi -r session_abc123',
+    '  - 正常列表项',
+    '  正文中包含 • 字符但不在行首To resume this session: kimi -r session_abc123',
+    '',
+    '',
   ].join('\n');
   const out = filterReport(raw);
   assert.doesNotMatch(out, /思考：/);
   assert.doesNotMatch(out, /To resume this session/);
-  assert.match(out, /# review 报告/);
-  assert.match(out, /- 正常列表项/);
-  assert.match(out, /正文中包含 • 字符但不在行首/);
+  assert.match(out, /^# review 报告/);
+  assert.match(out, /^- 正常列表项/m);
+  assert.match(out, /^正文中包含 • 字符但不在行首$/m);
   assert.ok(out.endsWith('\n') && !out.endsWith('\n\n'));
 });
 
-test('filterReport: 连续思考行删除后不留三连空行', () => {
-  const raw = '• a\n• b\n\n\n\n正文\n';
+test('filterReport: 无 bullet 块时保留全文（仅删 resume 与多余空行）', () => {
+  const raw = '# 报告\n\n\n\n正文\nTo resume this session: kimi -r session_x\n';
   const out = filterReport(raw);
   assert.doesNotMatch(out, /\n{3,}/);
+  assert.doesNotMatch(out, /To resume/);
+  assert.match(out, /# 报告/);
   assert.match(out, /正文/);
+});
+
+test('filterReport: 单一 bullet 块（回复本身）保留内容', () => {
+  const out = filterReport('• ok\n\n');
+  assert.equal(out, 'ok\n');
 });
 
 test('resolveInside: cwd 内路径通过，越界抛 UsageError', () => {

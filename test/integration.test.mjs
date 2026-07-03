@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runCli, makeTmpProject, makeGitProject } from './helpers.mjs';
+import { CLI, runCli, makeTmpProject, makeGitProject } from './helpers.mjs';
 
 const STUB = fileURLToPath(new URL('./fixtures/kimi-stub.mjs', import.meta.url));
 chmodSync(STUB, 0o755);
@@ -13,12 +13,12 @@ function tmpFile(name) {
   return join(mkdtempSync(join(tmpdir(), 'kimi-agent-it-')), name);
 }
 
-test('runKimi: 经 stub 传参正确（-p prompt -y -m model）', async () => {
+test('runKimi: 经 stub 传参正确（-p prompt -m model）', async () => {
   const argsFile = tmpFile('args.json');
   const r = await runCli(['run', '你好', '--model', 'k2'], { env: { KIMI_BIN: STUB, STUB_ARGS_FILE: argsFile } });
   assert.equal(r.code, 0);
   const args = JSON.parse(readFileSync(argsFile, 'utf8'));
-  assert.deepEqual(args, ['-p', '你好', '-y', '-m', 'k2']);
+  assert.deepEqual(args, ['-p', '你好', '-m', 'k2']);
   assert.match(r.stdout, /stub 报告/); // stdout 原样转发（含思考行）
   assert.match(r.stdout, /• 思考/);
 });
@@ -46,9 +46,8 @@ test('review: 最终 prompt 含模板骨架与目标文件', async () => {
   const argsFile = tmpFile('args.json');
   const r = await runCli(['review', 'a.ts', '--focus', '并发'], { cwd: dir, env: { KIMI_BIN: STUB, STUB_ARGS_FILE: argsFile } });
   assert.equal(r.code, 0);
-  const [pFlag, prompt, yFlag] = JSON.parse(readFileSync(argsFile, 'utf8'));
+  const [pFlag, prompt] = JSON.parse(readFileSync(argsFile, 'utf8'));
   assert.equal(pFlag, '-p');
-  assert.equal(yFlag, '-y');
   assert.match(prompt, /请 review 以下文件：a\.ts/);
   assert.match(prompt, /## 重点关注\n并发/);
   assert.match(prompt, /不要修改、创建或删除任何文件/);
@@ -125,4 +124,19 @@ test('review-plan: 端到端 prompt 含设计文档与 scope', async () => {
   assert.match(prompt, /design\.md/);
   assert.match(prompt, /- src\//);
   assert.match(prompt, /已实现且一致/);
+});
+
+test('runKimi: 下游管道提前关闭（EPIPE）不崩溃，--output 仍落盘', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const dir = makeTmpProject();
+  // head -n 1 读一行即退出关闭管道；STUB_SPLIT_MS 保证第二次写发生在管道关闭后触发 EPIPE
+  const shCmd = `node "${CLI}" run x --output r.md | head -n 1`;
+  await promisify(execFile)('sh', ['-c', shCmd], {
+    cwd: dir,
+    env: { ...process.env, KIMI_BIN: STUB, STUB_SPLIT_MS: '400' },
+  });
+  const saved = readFileSync(join(dir, 'r.md'), 'utf8');
+  assert.match(saved, /stub 报告/);
+  assert.doesNotMatch(saved, /思考/);
 });

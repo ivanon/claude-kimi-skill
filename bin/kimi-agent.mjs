@@ -142,18 +142,29 @@ export function precheck(opts) {
 }
 
 export function filterReport(text) {
-  const body = text
-    .split('\n')
-    .filter((line) => !line.startsWith('• '))
-    .filter((line) => !line.startsWith('To resume this session'))
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  // 依据 kimi -p 真实输出校准：每条消息渲染为 "• " 开头的块（续行缩进 2 空格），
+  // 最后一个块是最终回复；resume 提示可能直接粘在正文末尾（无换行分隔）。
+  const normalized = text
+    .replace(/\r\n/g, '\n')
+    .replace(/To resume this session: kimi -r \S+/g, '');
+  const lines = normalized.split('\n');
+  const lastBlockStart = lines.findLastIndex((line) => line.startsWith('• '));
+  let body;
+  if (lastBlockStart === -1) {
+    body = normalized;
+  } else {
+    const blockLines = [lines[lastBlockStart].slice(2)];
+    for (let i = lastBlockStart + 1; i < lines.length; i++) {
+      blockLines.push(lines[i].startsWith('  ') ? lines[i].slice(2) : lines[i]);
+    }
+    body = blockLines.join('\n');
+  }
+  body = body.replace(/\n{3,}/g, '\n\n').trim();
   return body === '' ? '' : `${body}\n`;
 }
 
 export function buildKimiArgs(prompt, opts) {
-  const args = ['-p', prompt, '-y'];
+  const args = ['-p', prompt];
   if (opts.model) args.push('-m', opts.model);
   return args;
 }
@@ -173,12 +184,22 @@ export function runKimi(prompt, opts) {
     const done = settle(resolvePromise);
     const fail = settle(rejectPromise);
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, opts.timeout * 1000);
+    // 下游管道提前关闭（如 | head）时 stdout 写入会 EPIPE：停止转发但继续缓冲，保证 --output 仍可落盘
+    let stdoutBroken = false;
+    const onStdoutError = (err) => {
+      if (err?.code === 'EPIPE') { stdoutBroken = true; } else { throw err; }
+    };
+    process.stdout.on('error', onStdoutError);
+    const cleanup = () => {
+      clearTimeout(timer);
+      process.stdout.removeListener('error', onStdoutError);
+    };
     child.stdout.on('data', (chunk) => {
-      process.stdout.write(chunk);
+      if (!stdoutBroken) process.stdout.write(chunk);
       chunks.push(chunk);
     });
     child.on('error', (err) => {
-      clearTimeout(timer);
+      cleanup();
       if (err.code === 'ENOENT') {
         fail(new Error(`找不到 kimi 命令（${bin}）。请安装 kimi code CLI 并执行 kimi login，或设置 KIMI_BIN 指向可执行文件。`));
       } else {
@@ -186,7 +207,7 @@ export function runKimi(prompt, opts) {
       }
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      cleanup();
       if (timedOut) {
         fail(new Error(`kimi 执行超时（${opts.timeout}s），进程已终止`));
       } else {
