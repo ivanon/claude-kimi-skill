@@ -41,9 +41,21 @@ function hasValue(v) {
   return v !== undefined && v !== null && String(v).trim() !== '';
 }
 
+// 子命令专属选项白名单；--model/--timeout/--cwd/--dry-run/--output 为通用选项
+const OPTION_COMMANDS = {
+  '--focus': ['review', 'review-diff'],
+  '--scope': ['review-plan', 'implement'],
+  '--plan': ['implement'],
+};
+
 export function parseCliArgs(argv) {
   const [cmd, ...rest] = argv;
   if (!cmd || !KNOWN_COMMANDS.includes(cmd)) throw new UsageError(`未知子命令: ${cmd ?? '(空)'}`);
+  const requireApplicable = (option) => {
+    if (!OPTION_COMMANDS[option].includes(cmd)) {
+      throw new UsageError(`选项 ${option} 不适用于子命令 ${cmd}`);
+    }
+  };
   const opts = {
     cmd, positional: [], scope: [],
     focus: null, output: null, plan: null, model: null,
@@ -66,10 +78,10 @@ export function parseCliArgs(argv) {
       return v;
     };
     switch (a) {
-      case '--focus': opts.focus = takeValue(); break;
+      case '--focus': requireApplicable(a); opts.focus = takeValue(); break;
       case '--output': opts.output = takeValue(); break;
-      case '--scope': opts.scope.push(takeValue()); break;
-      case '--plan': opts.plan = takeValue(); break;
+      case '--scope': requireApplicable(a); opts.scope.push(takeValue()); break;
+      case '--plan': requireApplicable(a); opts.plan = takeValue(); break;
       case '--model': opts.model = takeNonEmpty(); break;
       case '--cwd': opts.cwd = takeNonEmpty(); break;
       case '--dry-run': opts.dryRun = true; break;

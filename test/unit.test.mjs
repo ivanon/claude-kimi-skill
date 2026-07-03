@@ -120,6 +120,16 @@ test('parseCliArgs: -- 终止选项解析，--cwd 空值报错', () => {
   assert.throws(() => parseCliArgs(['review', 'a.ts', '--cwd', '']), UsageError);
 });
 
+test('parseCliArgs: 选项按子命令白名单校验', () => {
+  assert.throws(() => parseCliArgs(['implement', 'x', '--focus', 'f']), (e) => e instanceof UsageError && /--focus 不适用于子命令 implement/.test(e.message));
+  assert.throws(() => parseCliArgs(['review', 'a.ts', '--scope', 's']), UsageError);
+  assert.throws(() => parseCliArgs(['run', 'x', '--plan', 'p']), UsageError);
+  assert.throws(() => parseCliArgs(['review-diff', '--scope', 's']), UsageError);
+  // 合法组合不受影响
+  parseCliArgs(['review-diff', '--focus', 'f']);
+  parseCliArgs(['run', 'x', '--output', 'r.md']);
+});
+
 // 依据 kimi -p 真实输出校准（2026-07-03 冒烟样本）：
 // 每条消息渲染为 "• " 开头的块，续行缩进 2 空格；最后一个块是最终回复；
 // resume 提示可能直接粘在正文最后一个字符后（无换行）。
