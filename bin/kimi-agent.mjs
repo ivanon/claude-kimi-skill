@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { pathToFileURL } from 'node:url';
-import { existsSync, statSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { existsSync, statSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve, sep, dirname } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 
 export class UsageError extends Error {}
@@ -196,11 +196,46 @@ export function runKimi(prompt, opts) {
   });
 }
 
+const TEMPLATE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'prompts');
+
+const TEMPLATE_BY_CMD = {
+  review: 'review-file.md',
+  'review-plan': 'review-plan.md',
+  'review-diff': 'review-diff.md',
+  implement: 'implement.md',
+};
+
+export function buildVars(opts) {
+  const scopeList = opts.scope.map((s) => `- ${s}`).join('\n');
+  switch (opts.cmd) {
+    case 'review': return { TARGET_FILE: opts.positional[0], FOCUS: opts.focus ?? '' };
+    case 'review-plan': return { PLAN_FILE: opts.positional[0], SCOPE: scopeList };
+    case 'review-diff': return { DIFF_RANGE: diffRangeOf(opts), FOCUS: opts.focus ?? '' };
+    case 'implement': return { TASK: opts.positional[0], SCOPE: scopeList, PLAN_FILE: opts.plan ?? '' };
+    default: throw new UsageError(`子命令 ${opts.cmd} 不使用模板`);
+  }
+}
+
+export function buildPrompt(opts) {
+  if (opts.cmd === 'run') return opts.positional[0];
+  const file = resolve(TEMPLATE_DIR, TEMPLATE_BY_CMD[opts.cmd]);
+  return renderTemplate(readFileSync(file, 'utf8'), buildVars(opts));
+}
+
 export async function main(argv) {
   let opts;
+  let prompt;
+  let outputAbs = null;
   try {
     opts = parseCliArgs(argv);
     precheck(opts);
+    prompt = buildPrompt(opts);
+    if (opts.output) {
+      outputAbs = resolveInside(opts.cwd, opts.output, '--output 文件');
+      if (existsSync(outputAbs) && statSync(outputAbs).isDirectory()) {
+        throw new UsageError(`--output 路径是一个目录，无法写入文件: ${opts.output}`);
+      }
+    }
   } catch (e) {
     if (e instanceof UsageError) {
       process.stderr.write(`错误: ${e.message}\n\n${USAGE}`);
@@ -208,12 +243,14 @@ export async function main(argv) {
     }
     throw e;
   }
-  if (opts.cmd !== 'run') { // Task 8 接入模板子命令后删除本分支
-    process.stderr.write(`错误: 子命令 ${opts.cmd} 尚未实现\n`);
-    return 2;
+  if (opts.dryRun) {
+    const bin = process.env.KIMI_BIN || 'kimi';
+    process.stdout.write(`--- kimi 命令 ---\n${bin} ${buildKimiArgs('<prompt>', opts).join(' ')}\n--- prompt ---\n${prompt}\n`);
+    return 0;
   }
   try {
-    const { code } = await runKimi(opts.positional[0], opts);
+    const { code, stdout } = await runKimi(prompt, opts);
+    if (outputAbs) writeFileSync(outputAbs, filterReport(stdout));
     return code;
   } catch (e) {
     process.stderr.write(`错误: ${String(e?.message ?? e)}\n`);
