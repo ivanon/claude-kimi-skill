@@ -1,0 +1,10 @@
+{
+  "name": "claude-kimi-agent-skill",
+  "version": "0.1.0",
+  "description": "Claude Code skill: 调用 kimi code CLI 执行 review 与 TDD 开发任务",
+  "type": "module",
+  "bin": { "kimi-agent": "bin/kimi-agent.mjs" },
+  "scripts": { "test": "node --test 'test/*.test.mjs'" },
+  "engines": { "node": ">=20" },
+  "license": "MIT"
+}
