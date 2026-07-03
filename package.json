@@ -1,16 +1,39 @@
 {
   "name": "claude-kimi-agent-skill",
   "version": "0.1.0",
-  "description": "Claude Code skill: 调用 kimi code CLI 执行 review 与 TDD 开发任务",
+  "description": "A Claude Code skill that invokes kimi code CLI for code review and TDD-based implementation via fixed prompt templates",
   "type": "module",
   "bin": {
     "kimi-agent": "bin/kimi-agent.mjs"
   },
+  "files": [
+    "bin",
+    "prompts",
+    "SKILL.md",
+    "README.md"
+  ],
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "prepublishOnly": "npm test"
   },
   "engines": {
     "node": ">=20"
   },
-  "license": "MIT"
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivanon/claude-kimi-skill.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude",
+    "kimi",
+    "kimi-code",
+    "ai-agent",
+    "code-review",
+    "tdd",
+    "skill"
+  ]
 }
