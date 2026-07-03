@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { existsSync, statSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, statSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { resolve, sep, dirname } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 
@@ -291,7 +291,18 @@ export async function main(argv) {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// npm 全局安装时 argv[1] 是 bin 符号链接，而 Node 加载入口模块用真实路径，
+// 须对 argv[1] 做 realpath 才能与 import.meta.url 匹配
+function isMainEntry() {
+  if (!process.argv[1]) return false;
+  try {
+    return import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainEntry()) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (err) => {

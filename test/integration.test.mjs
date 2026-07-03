@@ -178,3 +178,17 @@ test('review-plan: 目标路径越界时 exit 2（端到端）', async () => {
   assert.equal(r.code, 2);
   assert.match(r.stderr, /超出工作目录/);
 });
+
+test('CLI 经符号链接调用（npm 全局安装场景）时入口守卫仍生效', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const dir = makeTmpProject();
+  const link = join(dir, 'kimi-agent-link');
+  symlinkSync(CLI, link);
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const r = await promisify(execFile)('node', [link, 'run', 'x', '--dry-run'], { cwd: dir, env: { ...process.env } })
+    .then((o) => ({ code: 0, ...o }))
+    .catch((e) => ({ code: e.code ?? 1, stdout: e.stdout ?? '', stderr: e.stderr ?? '' }));
+  assert.equal(r.code, 0);
+  assert.match(r.stdout, /--- prompt ---/);
+});

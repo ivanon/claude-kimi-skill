@@ -16,6 +16,22 @@ Claude Code skill：通过固定 prompt 模板调用 kimi code CLI，完成 revi
 1. Node.js >= 20
 2. 已安装并登录 kimi code CLI（`kimi login`），或设置 `KIMI_BIN`
 
+## 安装
+
+### 1. 安装 CLI
+
+```bash
+npm install -g claude-kimi-agent-skill
+```
+
+### 2. 注册 Skill（Claude Code）
+
+```bash
+npx skills add ivanon/claude-kimi-skill -y -g
+```
+
+注册后在 Claude Code 中明确提到 "kimi" 即可触发，例如"用kimi review一下这个文件"、"让kimi实现登录功能"。
+
 ## 用法
 
 见 `SKILL.md` 的示例一节；所有子命令支持 `--model`、`--timeout <sec>`（默认 600）、`--cwd <dir>`、`--dry-run`、`--output <file>`（把过滤后的报告落盘，stdout 始终原样转发）。
