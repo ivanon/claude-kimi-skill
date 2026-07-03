@@ -19,6 +19,25 @@ export const USAGE = `用法:
 
 const KNOWN_COMMANDS = ['review', 'review-plan', 'review-diff', 'implement', 'run'];
 
+export function renderTemplate(template, vars) {
+  template = template.replace(/\r\n/g, '\n'); // 归一化 CRLF，可选块正则只处理 LF
+  // 先处理可选块：{{#VAR}} 与 {{/VAR}} 各独占一行
+  let out = template.replace(
+    /^\{\{#(\w+)\}\}\n([\s\S]*?)^\{\{\/\1\}\}\n?/gm,
+    (_, name, body) => hasValue(vars[name]) ? body : ''
+  );
+  // 再替换普通占位符；无值即为缺少必填变量
+  out = out.replace(/\{\{(\w+)\}\}/g, (_, name) => {
+    if (!hasValue(vars[name])) throw new UsageError(`缺少必填变量: ${name}`);
+    return String(vars[name]);
+  });
+  return out;
+}
+
+function hasValue(v) {
+  return v !== undefined && v !== null && String(v).trim() !== '';
+}
+
 export async function main(argv) {
   const cmd = argv[0];
   if (!cmd || !KNOWN_COMMANDS.includes(cmd)) {
