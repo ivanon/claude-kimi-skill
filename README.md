@@ -18,9 +18,9 @@ Claude Code skill：通过固定 prompt 模板调用 kimi code CLI，完成 revi
 
 ## 用法
 
-见 `SKILL.md` 的示例一节；所有子命令支持 `--model`、`--timeout <sec>`（默认 600）、`--cwd <dir>`、`--dry-run`。
+见 `SKILL.md` 的示例一节；所有子命令支持 `--model`、`--timeout <sec>`（默认 600）、`--cwd <dir>`、`--dry-run`、`--output <file>`（把过滤后的报告落盘，stdout 始终原样转发）。
 
-review 类子命令支持 `--output <file>` 把过滤后的报告落盘（stdout 始终原样转发）。
+专属选项按子命令白名单校验，传错即报错退出：`--focus` 仅 review / review-diff；`--scope` 仅 review-plan / implement；`--plan` 仅 implement。
 
 ## 开发
 

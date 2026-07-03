@@ -57,7 +57,7 @@ claude-kimi-skill/
 ```bash
 kimi-agent review <file> [--focus "关注点"] [--output <file>]
 kimi-agent review-plan <plan文件> [--scope <路径>]... [--output <file>]
-kimi-agent review-diff [<git range>] [--output <file>]    # 不带 range 默认 review 未提交变更
+kimi-agent review-diff [<git range>] [--focus "关注点"] [--output <file>]    # 不带 range 默认 review 未提交变更
 kimi-agent implement "<需求描述>" [--scope <路径>]... [--plan <设计文档>]
 kimi-agent run "<自由prompt>"
 
@@ -76,6 +76,7 @@ kimi-agent run "<自由prompt>"
 - `review-diff` 的 `<git range>` 接受任何 `git diff` 兼容的参数形式（如 `main..HEAD`、`main...HEAD`、单个 commit、`--cached`），原样嵌入模板文案；不传时默认为 `HEAD`（即 `git diff HEAD`，含工作区+暂存区全部未提交变更）。
 - diff 内容**不嵌入 prompt**：模板只告诉 kimi 应执行的 diff 命令（如 `git diff HEAD`），由 kimi 自己在项目内执行查看。这同时规避了大 diff 撑爆 prompt/argv 长度的问题。
 - `<file>`、`<plan文件>`、`--scope`、`--plan` 的路径在预检查时规范化为绝对路径，且必须位于 `--cwd` 目录子树内，越界即报错（exit 2）。
+- **冒烟后修订**：`--output` 为通用选项（所有子命令可用，含 implement/run）；`--focus`/`--scope`/`--plan` 按子命令白名单校验（`--focus` 仅 review/review-diff，`--scope` 仅 review-plan/implement，`--plan` 仅 implement），不适用即 exit 2，防止静默无效。
 
 **权限模式**：所有子命令统一 `kimi -y` 全自动执行。review 类的"只读"是 **prompt 级软约束**（模板写死"不要修改/创建/删除任何文件"），没有技术层面的强制——`-y` 模式下 kimi 理论上仍可能误写文件，风险由 git 工作区兜底（可 diff 可回滚）。SKILL.md 与 README 中须明确披露这一点，并强调 `implement` 会修改仓库。kimi 只读/沙箱模式若后续版本提供，review 类应优先改用（记入 P2 迭代方向，v1 不做 review 前后 `git status` 快照对比）。
 
