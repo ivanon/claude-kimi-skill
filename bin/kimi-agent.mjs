@@ -38,13 +38,70 @@ function hasValue(v) {
   return v !== undefined && v !== null && String(v).trim() !== '';
 }
 
-export async function main(argv) {
-  const cmd = argv[0];
-  if (!cmd || !KNOWN_COMMANDS.includes(cmd)) {
-    process.stderr.write(`错误: 未知子命令: ${cmd ?? '(空)'}\n\n${USAGE}`);
-    return 2;
+export function parseCliArgs(argv) {
+  const [cmd, ...rest] = argv;
+  if (!cmd || !KNOWN_COMMANDS.includes(cmd)) throw new UsageError(`未知子命令: ${cmd ?? '(空)'}`);
+  const opts = {
+    cmd, positional: [], scope: [],
+    focus: null, output: null, plan: null, model: null,
+    timeout: 600, cwd: process.cwd(), dryRun: false,
+  };
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === '--') {
+      opts.positional.push(...rest.slice(i + 1));
+      break;
+    }
+    const takeValue = () => {
+      i += 1;
+      if (i >= rest.length) throw new UsageError(`选项 ${a} 缺少值`);
+      return rest[i];
+    };
+    const takeNonEmpty = () => {
+      const v = takeValue();
+      if (!v.trim()) throw new UsageError(`选项 ${a} 的值不能为空`);
+      return v;
+    };
+    switch (a) {
+      case '--focus': opts.focus = takeValue(); break;
+      case '--output': opts.output = takeValue(); break;
+      case '--scope': opts.scope.push(takeValue()); break;
+      case '--plan': opts.plan = takeValue(); break;
+      case '--model': opts.model = takeNonEmpty(); break;
+      case '--cwd': opts.cwd = takeNonEmpty(); break;
+      case '--dry-run': opts.dryRun = true; break;
+      case '--timeout': {
+        const v = Number(takeValue());
+        if (!Number.isFinite(v) || v <= 0) throw new UsageError('--timeout 必须是正数（秒）');
+        opts.timeout = v;
+        break;
+      }
+      default:
+        if (a.startsWith('--') && cmd !== 'review-diff') throw new UsageError(`未知选项: ${a}`);
+        opts.positional.push(a);
+    }
   }
-  return 0; // 后续任务替换为完整流程
+  if ((cmd === 'review' || cmd === 'review-plan') && opts.positional.length !== 1) {
+    throw new UsageError(`${cmd} 需要且仅需要一个目标文件参数`);
+  }
+  if ((cmd === 'implement' || cmd === 'run') && (opts.positional.length !== 1 || !opts.positional[0].trim())) {
+    throw new UsageError(`${cmd} 需要一个非空的描述参数`);
+  }
+  return opts;
+}
+
+export async function main(argv) {
+  try {
+    const opts = parseCliArgs(argv);
+    void opts; // 后续任务接入 precheck / buildPrompt / runKimi
+    return 0;
+  } catch (e) {
+    if (e instanceof UsageError) {
+      process.stderr.write(`错误: ${e.message}\n\n${USAGE}`);
+      return 2;
+    }
+    throw e;
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
