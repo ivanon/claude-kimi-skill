@@ -181,6 +181,8 @@ export function buildKimiArgs(prompt, opts) {
   return args;
 }
 
+const HEARTBEAT_MS = 30_000;
+
 export function runKimi(prompt, opts) {
   return new Promise((resolvePromise, rejectPromise) => {
     const bin = process.env.KIMI_BIN || 'kimi';
@@ -190,6 +192,13 @@ export function runKimi(prompt, opts) {
     });
     const chunks = [];
     let timedOut = false;
+    // 心跳：kimi -p 按消息整体输出，长任务可能数分钟无 stdout，用 stderr 报告存活
+    const startedAt = Date.now();
+    let gotOutput = false;
+    const elapsed = () => Math.round((Date.now() - startedAt) / 1000);
+    const beat = setInterval(() => {
+      process.stderr.write(`[kimi-agent] kimi 运行中 ${elapsed()}s${gotOutput ? '' : '（尚无输出，属正常现象）'}\n`);
+    }, HEARTBEAT_MS);
     // settled 防卫：error 事件后 close 仍会触发，确保 Promise 只 settle 一次
     let settled = false;
     const settle = (fn) => (value) => { if (!settled) { settled = true; fn(value); } };
@@ -204,9 +213,11 @@ export function runKimi(prompt, opts) {
     process.stdout.on('error', onStdoutError);
     const cleanup = () => {
       clearTimeout(timer);
+      clearInterval(beat);
       process.stdout.removeListener('error', onStdoutError);
     };
     child.stdout.on('data', (chunk) => {
+      gotOutput = true;
       if (!stdoutBroken) process.stdout.write(chunk);
       chunks.push(chunk);
     });
@@ -223,6 +234,7 @@ export function runKimi(prompt, opts) {
       if (timedOut) {
         fail(new Error(`kimi 执行超时（${opts.timeout}s），进程已终止`));
       } else {
+        process.stderr.write(`[kimi-agent] kimi 结束（${elapsed()}s，退出码 ${code ?? 1}）\n`);
         done({ code: code ?? 1, stdout: Buffer.concat(chunks).toString('utf8') });
       }
     });
@@ -282,6 +294,7 @@ export async function main(argv) {
     return 0;
   }
   try {
+    process.stderr.write(`[kimi-agent] 正在调用 kimi 执行 ${opts.cmd}（超时 ${opts.timeout}s）。kimi 按消息整体输出，长任务可能数分钟无输出，每 30s 会在此打印心跳。\n`);
     const { code, stdout } = await runKimi(prompt, opts);
     if (outputAbs) writeFileSync(outputAbs, filterReport(stdout));
     return code;

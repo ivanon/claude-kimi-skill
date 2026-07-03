@@ -192,3 +192,12 @@ test('CLI 经符号链接调用（npm 全局安装场景）时入口守卫仍生
   assert.equal(r.code, 0);
   assert.match(r.stdout, /--- prompt ---/);
 });
+
+test('执行时 stderr 输出启动横幅，dry-run 不输出', async () => {
+  const dir = makeTmpProject();
+  const r = await runCli(['run', 'x'], { cwd: dir, env: { KIMI_BIN: STUB } });
+  assert.equal(r.code, 0);
+  assert.match(r.stderr, /\[kimi-agent\] 正在调用 kimi/);
+  const dry = await runCli(['run', 'x', '--dry-run'], { cwd: dir, env: { KIMI_BIN: STUB } });
+  assert.doesNotMatch(dry.stderr, /\[kimi-agent\]/);
+});

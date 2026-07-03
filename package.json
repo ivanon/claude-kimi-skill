@@ -1,6 +1,6 @@
 {
   "name": "claude-kimi-agent-skill",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A Claude Code skill that invokes kimi code CLI for code review and TDD-based implementation via fixed prompt templates",
   "type": "module",
   "bin": {
