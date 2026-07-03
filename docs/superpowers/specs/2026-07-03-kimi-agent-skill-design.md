@@ -49,7 +49,7 @@ claude-kimi-skill/
 1. Claude 识别到用户明确提到 kimi 且意图为 review/实现/编码任务。
 2. Claude 通过 Bash 调用 `node <skill目录>/bin/kimi-agent.mjs <子命令> <参数>`。
 3. 脚本读取对应模板，代码完成变量替换生成最终 prompt。
-4. `execFile(KIMI_BIN, ['-p', prompt, '-y', ...])` 在目标项目目录执行（非 shell 调用，无转义问题）。
+4. `spawn(KIMI_BIN, ['-p', prompt, '-y', ...])` 在目标项目目录执行（参数数组、非 shell 调用，无转义问题；用 spawn 而非 execFile 是为了 tee 流式转发 stdout）。
 5. kimi 输出实时流回 stdout，Claude 读取结果向用户汇报；`--output` 时同时落盘。
 
 ## 6. CLI 接口
