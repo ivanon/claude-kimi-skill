@@ -78,7 +78,7 @@ kimi-agent run "<自由prompt>"
 - `<file>`、`<plan文件>`、`--scope`、`--plan` 的路径在预检查时规范化为绝对路径，且必须位于 `--cwd` 目录子树内，越界即报错（exit 2）。
 - **冒烟后修订**：`--output` 为通用选项（所有子命令可用，含 implement/run）；`--focus`/`--scope`/`--plan` 按子命令白名单校验（`--focus` 仅 review/review-diff，`--scope` 仅 review-plan/implement，`--plan` 仅 implement），不适用即 exit 2，防止静默无效。
 
-**权限模式**：所有子命令统一 `kimi -y` 全自动执行。review 类的"只读"是 **prompt 级软约束**（模板写死"不要修改/创建/删除任何文件"），没有技术层面的强制——`-y` 模式下 kimi 理论上仍可能误写文件，风险由 git 工作区兜底（可 diff 可回滚）。SKILL.md 与 README 中须明确披露这一点，并强调 `implement` 会修改仓库。kimi 只读/沙箱模式若后续版本提供，review 类应优先改用（记入 P2 迭代方向，v1 不做 review 前后 `git status` 快照对比）。
+**权限模式**：所有子命令统一走 kimi `-p` 非交互模式，该模式默认自动批准所有操作（冒烟修订：不传 `-y`，`-p` 与 `-y` 组合会被 kimi 拒绝，见第 5 节）。review 类的"只读"是 **prompt 级软约束**（模板写死"不要修改/创建/删除任何文件"），没有技术层面的强制——kimi 理论上仍可能误写文件，风险由 git 工作区兜底（可 diff 可回滚）。SKILL.md 与 README 中须明确披露这一点，并强调 `implement` 会修改仓库。kimi 只读/沙箱模式若后续版本提供，review 类应优先改用（记入 P2 迭代方向，v1 不做 review 前后 `git status` 快照对比）。
 
 ## 7. Prompt 模板设计
 
