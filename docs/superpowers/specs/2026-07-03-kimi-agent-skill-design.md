@@ -150,7 +150,7 @@ kimi 可执行文件解析顺序：`KIMI_BIN` 环境变量 → PATH 中的 `kimi
 **SKILL.md 最小规格**（必须包含的章节）：
 
 1. **触发条件**：正例 + 反例（同上）。
-2. **调用方式**：`node <skill基目录>/bin/kimi-agent.mjs <子命令> ...`。skill 加载时 Claude Code 会在 skill 内容前注入 "Base directory for this skill" 行，SKILL.md 指示 Claude 用该基目录拼出脚本绝对路径，不依赖 cwd。
+2. **调用方式**：全局 `kimi-agent` 命令（npm -g 安装；skill 注册仅分发 SKILL.md，脚本随 npm 包走）。
 3. **意图→子命令映射表**：
 
    | 用户说法 | 子命令 |
