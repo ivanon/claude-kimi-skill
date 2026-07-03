@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runCli } from './helpers.mjs';
-import { renderTemplate, UsageError, parseCliArgs } from '../bin/kimi-agent.mjs';
+import { renderTemplate, UsageError, parseCliArgs, filterReport } from '../bin/kimi-agent.mjs';
 
 test('未知子命令：exit 2 且 stderr 含用法', async () => {
   const r = await runCli(['nonsense']);
@@ -116,4 +116,30 @@ test('parseCliArgs: -- 终止选项解析，--cwd 空值报错', () => {
   const o = parseCliArgs(['run', '--', '--not-an-option']);
   assert.deepEqual(o.positional, ['--not-an-option']);
   assert.throws(() => parseCliArgs(['review', 'a.ts', '--cwd', '']), UsageError);
+});
+
+test('filterReport: 过滤思考行与 resume 尾行，保留正文', () => {
+  const raw = [
+    '• 思考：正在分析代码',
+    '# review 报告',
+    '',
+    '- 正常列表项',
+    '正文中包含 • 字符但不在行首',
+    '',
+    'To resume this session: kimi -r session_abc123',
+  ].join('\n');
+  const out = filterReport(raw);
+  assert.doesNotMatch(out, /思考：/);
+  assert.doesNotMatch(out, /To resume this session/);
+  assert.match(out, /# review 报告/);
+  assert.match(out, /- 正常列表项/);
+  assert.match(out, /正文中包含 • 字符但不在行首/);
+  assert.ok(out.endsWith('\n') && !out.endsWith('\n\n'));
+});
+
+test('filterReport: 连续思考行删除后不留三连空行', () => {
+  const raw = '• a\n• b\n\n\n\n正文\n';
+  const out = filterReport(raw);
+  assert.doesNotMatch(out, /\n{3,}/);
+  assert.match(out, /正文/);
 });

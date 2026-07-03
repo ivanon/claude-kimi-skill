@@ -90,6 +90,17 @@ export function parseCliArgs(argv) {
   return opts;
 }
 
+export function filterReport(text) {
+  const body = text
+    .split('\n')
+    .filter((line) => !line.startsWith('• '))
+    .filter((line) => !line.startsWith('To resume this session'))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return body === '' ? '' : `${body}\n`;
+}
+
 export async function main(argv) {
   try {
     const opts = parseCliArgs(argv);
