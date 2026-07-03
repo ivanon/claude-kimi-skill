@@ -162,3 +162,19 @@ test('implement: --output 同样生效', async () => {
   assert.equal(r.code, 0);
   assert.match(readFileSync(join(dir, 'impl.md'), 'utf8'), /stub 报告/);
 });
+
+test('run: --output 正常路径落盘过滤报告', async () => {
+  const dir = makeTmpProject();
+  const r = await runCli(['run', '总结一下', '--output', 'run.md'], { cwd: dir, env: { KIMI_BIN: STUB } });
+  assert.equal(r.code, 0);
+  const saved = readFileSync(join(dir, 'run.md'), 'utf8');
+  assert.match(saved, /stub 报告/);
+  assert.doesNotMatch(saved, /思考/);
+});
+
+test('review-plan: 目标路径越界时 exit 2（端到端）', async () => {
+  const dir = makeTmpProject();
+  const r = await runCli(['review-plan', '/etc/hosts'], { cwd: dir, env: { KIMI_BIN: STUB } });
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /超出工作目录/);
+});

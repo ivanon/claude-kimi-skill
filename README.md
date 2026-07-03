@@ -22,6 +22,8 @@ Claude Code skill：通过固定 prompt 模板调用 kimi code CLI，完成 revi
 
 专属选项按子命令白名单校验，传错即报错退出：`--focus` 仅 review / review-diff；`--scope` 仅 review-plan / implement；`--plan` 仅 implement。
 
+`--output` 语义：kimi 非零退出时仍会写入已捕获的部分报告（便于排查），退出码照常透传；超时（进程被 kill）则不落盘。
+
 ## 开发
 
 ```bash
