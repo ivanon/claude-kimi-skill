@@ -212,3 +212,33 @@ test('buildKimiArgs: 不含 -y/--auto', async () => {
   assert.deepEqual(buildKimiArgs('p', { model: 'k2' }), ['-p', 'p', '-m', 'k2']);
   assert.ok(!buildKimiArgs('p', { model: 'k2' }).includes('-y'));
 });
+
+// v0.1.3: kimi review 意见修复
+test('UsageError: name 正确', () => {
+  assert.equal(new UsageError('x').name, 'UsageError');
+});
+
+test('parseCliArgs: --scope 空值报错', () => {
+  assert.throws(() => parseCliArgs(['implement', 'x', '--scope', '']), UsageError);
+});
+
+test('renderTemplate: 孤立 \\r 也归一化', () => {
+  assert.equal(renderTemplate('a\rb {{V}}', { V: '1' }), 'a\nb 1');
+});
+
+test('precheck: 目标是目录时报错文案区分', () => {
+  const dir = makeTmpProject();
+  assert.throws(
+    () => precheck({ cmd: 'review', positional: ['.'], scope: [], plan: null, cwd: dir }),
+    /是一个目录/
+  );
+});
+
+test('--help / -h: 打印用法 exit 0', async () => {
+  const h1 = await runCli(['--help']);
+  assert.equal(h1.code, 0);
+  assert.match(h1.stdout, /用法/);
+  const h2 = await runCli(['review', '-h']);
+  assert.equal(h2.code, 0);
+  assert.match(h2.stdout, /用法/);
+});

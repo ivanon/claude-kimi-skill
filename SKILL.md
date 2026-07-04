@@ -31,6 +31,13 @@ kimi-agent <子命令> [参数...]
 
 若提示找不到 `kimi-agent` 命令，先执行 `npm install -g claude-kimi-agent-skill`。
 
+**推荐调用模式（重要）**：review / implement 这类长任务，stdout 会输出 kimi 的全部思考过程（可能几十 KB），只适合看进度。**务必加 `--output <临时文件>`**（如 `/tmp/kimi-review-<随机>.md`），任务结束后**读取该文件**获取过滤后的干净报告（已剔除思考行与会话提示），以文件内容为准向用户汇报：
+
+```bash
+kimi-agent review src/auth.ts --output /tmp/kimi-review-$$.md
+# 结束后 Read /tmp/kimi-review-$$.md
+```
+
 ## 意图 → 子命令映射
 
 | 用户说法 | 子命令 |

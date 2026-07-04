@@ -4,7 +4,12 @@ import { existsSync, statSync, readFileSync, writeFileSync, realpathSync } from 
 import { resolve, sep, dirname } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 
-export class UsageError extends Error {}
+export class UsageError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'UsageError';
+  }
+}
 
 export const USAGE = `用法:
   kimi-agent review <file> [--focus "关注点"] [--output <file>]
@@ -18,12 +23,13 @@ export const USAGE = `用法:
   --timeout <sec>  默认 600，超时 kill
   --cwd <dir>      默认当前目录
   --dry-run        只打印最终 prompt 与 kimi 命令行，不实际调用
+  --help, -h       显示本用法
 `;
 
 const KNOWN_COMMANDS = ['review', 'review-plan', 'review-diff', 'implement', 'run'];
 
 export function renderTemplate(template, vars) {
-  template = template.replace(/\r\n/g, '\n'); // 归一化 CRLF，可选块正则只处理 LF
+  template = template.replace(/\r\n?/g, '\n'); // 归一化 CRLF 与孤立 \r，可选块正则只处理 LF
   // 先处理可选块：{{#VAR}} 与 {{/VAR}} 各独占一行
   let out = template.replace(
     /^\{\{#(\w+)\}\}\n([\s\S]*?)^\{\{\/\1\}\}\n?/gm,
@@ -80,7 +86,7 @@ export function parseCliArgs(argv) {
     switch (a) {
       case '--focus': requireApplicable(a); opts.focus = takeValue(); break;
       case '--output': opts.output = takeValue(); break;
-      case '--scope': requireApplicable(a); opts.scope.push(takeValue()); break;
+      case '--scope': requireApplicable(a); opts.scope.push(takeNonEmpty()); break;
       case '--plan': requireApplicable(a); opts.plan = takeValue(); break;
       case '--model': opts.model = takeNonEmpty(); break;
       case '--cwd': opts.cwd = takeNonEmpty(); break;
@@ -125,6 +131,7 @@ export function precheck(opts) {
   }
   if (opts.cmd === 'review' || opts.cmd === 'review-plan') {
     const abs = resolveInside(cwd, opts.positional[0], '目标文件');
+    if (existsSync(abs) && statSync(abs).isDirectory()) throw new UsageError(`目标是一个目录，请指定文件: ${opts.positional[0]}`);
     if (!existsSync(abs) || !statSync(abs).isFile()) throw new UsageError(`文件不存在: ${opts.positional[0]}`);
   }
   if (opts.plan) {
@@ -208,7 +215,14 @@ export function runKimi(prompt, opts) {
     // 下游管道提前关闭（如 | head）时 stdout 写入会 EPIPE：停止转发但继续缓冲，保证 --output 仍可落盘
     let stdoutBroken = false;
     const onStdoutError = (err) => {
-      if (err?.code === 'EPIPE') { stdoutBroken = true; } else { throw err; }
+      if (err?.code === 'EPIPE') {
+        stdoutBroken = true;
+      } else {
+        // 事件回调里 throw 会变成未捕获异常崩进程，统一走 Promise 失败路径
+        cleanup();
+        child.kill('SIGKILL');
+        fail(err);
+      }
     };
     process.stdout.on('error', onStdoutError);
     const cleanup = () => {
@@ -268,6 +282,10 @@ export function buildPrompt(opts) {
 }
 
 export async function main(argv) {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    process.stdout.write(USAGE);
+    return 0;
+  }
   let opts;
   let prompt;
   let outputAbs = null;
@@ -279,6 +297,10 @@ export async function main(argv) {
       outputAbs = resolveInside(opts.cwd, opts.output, '--output 文件');
       if (existsSync(outputAbs) && statSync(outputAbs).isDirectory()) {
         throw new UsageError(`--output 路径是一个目录，无法写入文件: ${opts.output}`);
+      }
+      const parent = dirname(outputAbs);
+      if (!existsSync(parent) || !statSync(parent).isDirectory()) {
+        throw new UsageError(`--output 父目录不存在: ${opts.output}`);
       }
     }
   } catch (e) {

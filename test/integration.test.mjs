@@ -201,3 +201,10 @@ test('执行时 stderr 输出启动横幅，dry-run 不输出', async () => {
   const dry = await runCli(['run', 'x', '--dry-run'], { cwd: dir, env: { KIMI_BIN: STUB } });
   assert.doesNotMatch(dry.stderr, /\[kimi-agent\]/);
 });
+
+test('--output 父目录不存在时 exit 2 且中文提示', async () => {
+  const dir = makeTmpProject();
+  const r = await runCli(['review', 'a.ts', '--output', 'no/such/dir/r.md'], { cwd: dir, env: { KIMI_BIN: STUB } });
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /父目录不存在/);
+});
