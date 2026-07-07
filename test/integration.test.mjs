@@ -97,11 +97,13 @@ test('--dry-run: 打印 prompt 与命令行，不调用 kimi', async () => {
   assert.throws(() => readFileSync(argsFile), /ENOENT/); // stub 未被调用
 });
 
-test('--output 路径越界拒绝', async () => {
+test('--output 允许写到工作目录外（如 /tmp、scratchpad）', async () => {
   const dir = makeTmpProject();
-  const r = await runCli(['review', 'a.ts', '--output', '../evil.md'], { cwd: dir, env: { KIMI_BIN: STUB } });
-  assert.equal(r.code, 2);
-  assert.match(r.stderr, /超出工作目录/);
+  const outDir = makeTmpProject(); // 与项目目录无包含关系的另一临时目录
+  const outFile = join(outDir, 'report.md');
+  const r = await runCli(['review', 'a.ts', '--output', outFile], { cwd: dir, env: { KIMI_BIN: STUB } });
+  assert.equal(r.code, 0);
+  assert.match(readFileSync(outFile, 'utf8'), /stub 报告/);
 });
 
 test('--output 指向已存在目录时 exit 2 且提示目录', async () => {

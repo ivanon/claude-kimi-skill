@@ -294,7 +294,8 @@ export async function main(argv) {
     precheck(opts);
     prompt = buildPrompt(opts);
     if (opts.output) {
-      outputAbs = resolveInside(opts.cwd, opts.output, '--output 文件');
+      // 输出报告允许写到工作目录外（如 /tmp、Claude 的 scratchpad）；越界防护只针对输入路径
+      outputAbs = resolve(opts.cwd, opts.output);
       if (existsSync(outputAbs) && statSync(outputAbs).isDirectory()) {
         throw new UsageError(`--output 路径是一个目录，无法写入文件: ${opts.output}`);
       }
